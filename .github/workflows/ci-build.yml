@@ -1,0 +1,77 @@
+name: Build & Test
+
+# Builds and tests the code on every PR and push to main branches.
+# This is all of the expensive linting and testing created by Wizden
+# which requires a build.
+#
+# Linting that doesn't require a build happens in ci-lint.yml.
+
+on:
+  push:
+    branches: [master, staging, stable]
+  merge_group:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [master, staging, stable]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Test
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Setup Submodules
+        run: git submodule update --init --recursive
+
+      - name: Pull Engine Updates
+        uses: space-wizards/submodule-dependency@v0.1.5
+
+      - name: Update Engine Submodules
+        run: |
+          cd RobustToolbox/
+          git submodule update --init --recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Install Dependencies
+        run: dotnet restore --locked-mode
+
+      - name: Build
+        run: dotnet build --configuration DebugOpt --no-restore /m
+
+      - name: YAML Linter
+        run: dotnet run  --no-build --configuration DebugOpt --project Content.YAMLLinter/Content.YAMLLinter.csproj
+
+      - name: Unit Tests
+        run: dotnet test --no-build --configuration DebugOpt Content.Tests/Content.Tests.csproj --logger GitHubActions -- NUnit.ConsoleOut=1
+
+      - name: Integration Tests
+        timeout-minutes: 30
+        env:
+          DOTNET_gcServer: 1
+        run: |
+          dotnet test --no-build --configuration DebugOpt Content.IntegrationTests/Content.IntegrationTests.csproj --logger GitHubActions -- NUnit.ConsoleOut=1 NUnit.MapWarningTo=Failed
+
+  ci-success:
+    name: Build & Test
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: CI Succeeded
+        run: exit 0

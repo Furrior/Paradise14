@@ -1,0 +1,145 @@
+name: Render Changed Maps
+
+# If the PR changes anything in Resources/Maps/:
+# - Finds all map files currently different from the base branch.
+# - If none are changed, deletes any existing bot comment.
+# - Otherwise, renders the changed maps and uploads them as an artifact,
+#   then posts or updates a single bot comment on the PR.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - 'Resources/Maps/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    name: Render Changed Maps
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Generate Paradise Bot token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PARADISE_BOT_APP_ID }}
+          private-key: ${{ secrets.PARADISE_BOT_PRIVATE_KEY }}
+
+      - name: Get changed map files
+        id: changed
+        uses: tj-actions/changed-files@v46
+        with:
+          files: 'Resources/Maps/**'
+
+      - name: Find existing bot comment
+        id: find-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'paradise14-bot[bot]'
+          body-includes: '<!-- map-renders-bot -->'
+
+      - name: Delete bot comment if no maps changed
+        if: steps.changed.outputs.any_changed == 'false' && steps.find-comment.outputs.comment-id != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh api --method DELETE repos/${{ github.repository }}/issues/comments/${{ steps.find-comment.outputs.comment-id }}
+
+      - name: Setup Submodules
+        if: steps.changed.outputs.any_changed == 'true'
+        run: git submodule update --init --recursive
+
+      - name: Pull Engine Updates
+        if: steps.changed.outputs.any_changed == 'true'
+        uses: space-wizards/submodule-dependency@v0.1.5
+
+      - name: Update Engine Submodules
+        if: steps.changed.outputs.any_changed == 'true'
+        run: cd RobustToolbox/ && git submodule update --init --recursive
+
+      - name: Setup .NET
+        if: steps.changed.outputs.any_changed == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Install Dependencies
+        if: steps.changed.outputs.any_changed == 'true'
+        run: dotnet restore --locked-mode
+
+      - name: Build Map Renderer
+        if: steps.changed.outputs.any_changed == 'true'
+        run: dotnet build Content.MapRenderer --configuration Release --no-restore /m
+
+      - name: Render Maps
+        if: steps.changed.outputs.any_changed == 'true'
+        run: |
+          mkdir -p map-renders
+          dotnet run --project Content.MapRenderer --no-build --configuration Release -- \
+            -f --output map-renders \
+            ${{ steps.changed.outputs.all_changed_files }}
+
+      - name: Upload Renders
+        if: steps.changed.outputs.any_changed == 'true'
+        id: artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: map-renders-pr${{ github.event.pull_request.number }}
+          path: map-renders/
+          retention-days: 30
+
+      - name: Create PR comment
+        if: steps.changed.outputs.any_changed == 'true' && steps.find-comment.outputs.comment-id == ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            <!-- map-renders-bot -->
+            ## Map Renders
+
+            **Changed maps:** `${{ steps.changed.outputs.all_changed_files }}`
+
+            **[Download renders](${{ steps.artifact.outputs.artifact-url }})**
+
+      - name: Update PR comment
+        if: steps.changed.outputs.any_changed == 'true' && steps.find-comment.outputs.comment-id != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: replace
+          body: |
+            <!-- map-renders-bot -->
+            ## Map Renders
+
+            **Changed maps:** `${{ steps.changed.outputs.all_changed_files }}`
+
+            **[Download renders](${{ steps.artifact.outputs.artifact-url }})**
+
+      - name: Append edit notice
+        if: steps.changed.outputs.any_changed == 'true' && steps.find-comment.outputs.comment-id != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: append
+          body: |
+            _Edit: renders updated after `${{ github.sha }}`_

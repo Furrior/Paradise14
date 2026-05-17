@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <EnginePath>$([MSBuild]::EnsureTrailingSlash($([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)RobustToolbox'))))</EnginePath>
+    <ProjectPath>$([MSBuild]::EnsureTrailingSlash($([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)'))))</ProjectPath>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+</Project>

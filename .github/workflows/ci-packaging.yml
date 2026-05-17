@@ -1,40 +1,35 @@
-﻿name: Test Packaging
+name: Test Packaging
+
+# Packages the server and client and uploads logs.
+# Logs are retained for seven days.
+# This only happens on merge to main branches to try and minimize compute time.
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
     paths:
       - '**.cs'
       - '**.csproj'
       - '**.sln'
       - '**.git**'
-      - '**.yml'
-      # no docs on which one of these is supposed to work, so
-      # why not just do both
       - 'RobustToolbox'
       - 'RobustToolbox/**'
-  merge_group:
-  pull_request:
-    types: [ opened, reopened, synchronize, ready_for_review ]
-    branches: [ master ]
-    paths:
-      - '**.cs'
-      - '**.csproj'
-      - '**.sln'
-      - '**.git**'
-      - '**.yml'
-      - 'RobustToolbox'
-      - 'RobustToolbox/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     name: Test Packaging
-    if: github.actor != 'PJBot' && github.event.pull_request.draft == false && github.actor != 'DeltaV-Bot'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Master
         uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 1
 
       - name: Setup Submodule
         run: |
@@ -48,14 +43,15 @@ jobs:
           cd RobustToolbox/
           git submodule update --init --recursive
 
-      # ubuntu-latest has .NET 10
-      # - name: Setup .NET Core
-      #   uses: actions/setup-dotnet@v4.1.0
-      #   with:
-      #     dotnet-version: 10.0.x
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
 
       - name: Install dependencies
-        run: dotnet restore
+        run: dotnet restore --locked-mode
 
       - name: Build Packaging
         run: dotnet build Content.Packaging --configuration Release --no-restore /m

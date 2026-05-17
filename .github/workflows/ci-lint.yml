@@ -1,0 +1,68 @@
+name: Lint
+
+# This is all in-place linting that doesn't require a build.
+# Linting that requires a build happens in ci-build.yml.
+
+on:
+  push:
+    branches: [master, staging, stable]
+  merge_group:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  grep-check:
+    name: Validate text
+    # draft != true handles push/merge_group events (where .pull_request is
+    # absent) correctly - null != true evaluates to true.
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 1
+      - name: Check for CRLF
+        run: Tools/check_crlf.py
+
+  schema-validation:
+    name: Schema Validation
+    # Validates RGA attribution files and map files against their JSON schemas.
+    # Needs a shallow submodule init to pull the schema files from RobustToolbox.
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 1
+      - name: Setup Submodule
+        run: git submodule update --init
+      - name: Pull Engine Updates
+        uses: space-wizards/submodule-dependency@v0.1.5
+      - name: Install Python dependencies
+        run: |
+          pip3 install --ignore-installed --user pillow jsonschema
+      - name: Validate RGA Schemas
+        # TODO: run only when needed
+        uses: PaulRitter/yaml-schema-validator@v1
+        with:
+          schema: RobustToolbox/Schemas/rga.yml
+          path_pattern: .*attributions.ya?ml$
+          validators_path: RobustToolbox/Schemas/rga_validators.py
+          validators_requirements: RobustToolbox/Schemas/rga_requirements.txt
+      - name: Validate Map Schemas
+        uses: PaulRitter/yaml-schema-validator@v1
+        with:
+          schema: RobustToolbox/Schemas/mapfile.yml
+          path_pattern: .*Resources/Maps/.*
+          validators_path: RobustToolbox/Schemas/mapfile_validators.py
+          validators_requirements: RobustToolbox/Schemas/mapfile_requirements.txt
+      - name: Validate RSIs
+        # TODO: run only when needed
+        run: |
+          python3 RobustToolbox/Schemas/validate_rsis.py Resources/
