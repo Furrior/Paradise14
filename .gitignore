@@ -271,6 +271,9 @@ __pycache__/
 !.vscode/launch.json
 !.vscode/tasks.json
 
+# Visual Studio Code C# Dev Kit cache file
+*.lscache
+
 # Release package files go here:
 release/
 
