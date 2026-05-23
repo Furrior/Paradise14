@@ -189,7 +189,7 @@ public sealed class AdminUIController : UIController,
         var function = args.Function;
 
         if (function == EngineKeyFunctions.UIClick)
-            _conHost.ExecuteCommand($"vv {entity}");
+            _conHost.ExecuteCommand($"playerpanel {info.SessionId}");
         else if (function == EngineKeyFunctions.UIRightClick)
             _verb.OpenVerbMenu(entity, true);
         else
