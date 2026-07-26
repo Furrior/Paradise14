@@ -1,4 +1,6 @@
-﻿using Content.Shared.StatusEffectNew;
+using Content.Shared.StatusEffectNew;
+using Robust.Shared.IoC;
+using Robust.Shared.Localization;
 using Robust.Shared.Prototypes;
 
 namespace Content.Shared.EntityEffects.Effects.StatusEffects;
@@ -47,19 +49,38 @@ public sealed partial class ModifyStatusEffect : BaseStatusEntityEffect<ModifySt
     [DataField(required: true)]
     public EntProtoId EffectProto;
 
-    public override string? EntityEffectGuidebookText(IPrototypeManager prototype, IEntitySystemManager entSys) =>
-        Time == null
+    public override string? EntityEffectGuidebookText(IPrototypeManager prototype, IEntitySystemManager entSys)
+    {
+        var effectName = EffectProto.Id;
+        if (effectName.StartsWith("StatusEffect"))
+            effectName = effectName.Substring("StatusEffect".Length);
+
+        var key = $"entity-effect-status-effect-{effectName}";
+        var loc = IoCManager.Resolve<ILocalizationManager>();
+
+        if (!loc.HasString(key))
+        {
+            var fullKey = $"entity-effect-status-effect-{EffectProto.Id}";
+            if (loc.HasString(fullKey))
+                key = fullKey;
+            else
+                key = prototype.Index(EffectProto).Name;
+        }
+
+        return Time == null
             ? Loc.GetString(
                 "entity-effect-guidebook-status-effect-indef",
                 ("chance", Probability),
                 ("type", Type),
-                ("key", prototype.Index(EffectProto).Name),
+                ("key", key),
                 ("delay", Delay.TotalSeconds))
             : Loc.GetString(
                 "entity-effect-guidebook-status-effect",
                 ("chance", Probability),
                 ("type", Type),
                 ("time", Time.Value.TotalSeconds),
-                ("key", prototype.Index(EffectProto).Name),
+                ("key", key),
                 ("delay", Delay.TotalSeconds));
+    }
 }
+

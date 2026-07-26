@@ -32,6 +32,8 @@ namespace Content.Server.Database
 #if DEBUG
                 // for tests
                 x.Ignore(CoreEventId.SensitiveDataLoggingEnabledWarning);
+                x.Ignore(RelationalEventId.NonTransactionalMigrationOperationWarning);
+                x.Ignore(SqliteEventId.TableRebuildPendingWarning);
 #endif
             });
 
